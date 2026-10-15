@@ -7,7 +7,7 @@ export default function Planes() {
   // Catálogo de precios trasladado desde comprarPlanes.js
   const catalogoPrecios = {
     'plan-diario': 5000,
-    'plan-mensual': 29900,
+    'plan-mensual': 29990,
     'plan-trimestral': 75000,
     'plan-semestral': 138000,
     'plan-anual': 240000,
