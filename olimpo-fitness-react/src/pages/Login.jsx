@@ -1,5 +1,7 @@
+
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { usuariosApi } from '../services/usuariosApi';
 import Swal from 'sweetalert2';
 
 export default function Login() {
@@ -7,71 +9,78 @@ export default function Login() {
 
   const [correo, setCorreo] = useState('');
   const [clave, setClave] = useState('');
+  const [cargando, setCargando] = useState(false);
 
-  const handleIniciarSesion = (e) => {
+  const handleIniciarSesion = async (e) => {
     e.preventDefault();
-    const correoTrimmed = correo.trim();
 
-    // 1. CREDENCIALES DIRECTAS DE ADMINISTRADOR
-    if (correoTrimmed === 'admin@olimpo.cl' && clave === 'admin123') {
-      const usuarioAdmin = {
-        nombre: 'Administrador Principal',
-        correo: correoTrimmed,
-        rol: 'admin',
-        plan: 'Dueño del Gimnasio',
-      };
+    if (cargando) return;
 
+    setCargando(true);
+
+    try {
+      // Autenticación real con Spring Boot
+      const respuesta = await usuariosApi.login(
+        correo.trim(),
+        clave
+      );
+
+      const { token, usuario } = respuesta;
+
+      if (!token || !usuario) {
+        throw new Error(
+          'La respuesta del servidor no es válida.'
+        );
+      }
+
+      // Guardar sesión y token JWT
+      sessionStorage.setItem('tokenOlimpo', token);
+      sessionStorage.setItem(
+        'usuarioLogueado',
+        JSON.stringify(usuario)
+      );
+
+      // Compatibilidad temporal con el frontend actual
       localStorage.setItem('sesionOlimpo', 'true');
-      localStorage.setItem('usuarioLogueado', JSON.stringify(usuarioAdmin));
+      localStorage.setItem(
+        'usuarioLogueado',
+        JSON.stringify(usuario)
+      );
 
-      Swal.fire({
-        title: '¡Bienvenido, Administrador!',
-        text: 'Accediendo al Panel de Control...',
+      await Swal.fire({
+        title: `¡Bienvenido/a, ${usuario.nombre}!`,
+        text: 'Sesión iniciada correctamente.',
         icon: 'success',
-        confirmButtonText: 'Ir a Admin',
+        confirmButtonText: 'Continuar',
+        confirmButtonColor: '#ffcc00',
         background: '#1e1e1e',
         color: '#ffffff',
-        confirmButtonColor: '#ffcc00',
-      }).then(() => {
-        navigate('/admin');
-        window.location.reload();
       });
-      return;
-    }
 
-    // 2. BÚSQUEDA DE USUARIO NORMAL REGISTRADO
-    const listaUsuarios = JSON.parse(localStorage.getItem('baseDatosOlimpo')) || [];
+      // Redirigir según el rol de Spring Boot
+      const destino =
+        usuario.rol?.toUpperCase() === 'ADMIN'
+          ? '/admin'
+          : '/perfil';
 
-    const usuarioEncontrado = listaUsuarios.find(
-      (user) => user.correo.toLowerCase() === correoTrimmed.toLowerCase() && user.clave === clave
-    );
+      navigate(destino);
 
-    if (usuarioEncontrado) {
-      localStorage.setItem('sesionOlimpo', 'true');
-      localStorage.setItem('usuarioLogueado', JSON.stringify(usuarioEncontrado));
+      // Actualizar componentes que leen la sesión
+      window.location.reload();
 
-      Swal.fire({
-        title: `¡Bienvenido/a, ${usuarioEncontrado.nombre}!`,
-        text: 'Sesión iniciada con éxito.',
-        icon: 'success',
-        confirmButtonText: 'Aceptar',
-        background: '#1e1e1e',
-        color: '#ffffff',
-        confirmButtonColor: '#ffcc00',
-      }).then(() => {
-        navigate('/perfil');
-        window.location.reload();
-      });
-    } else {
-      Swal.fire({
-        title: 'Error de Autenticación',
-        text: 'Correo o contraseña incorrectos. Por favor verifica tus datos.',
+    } catch (error) {
+      await Swal.fire({
+        title: 'Error de autenticación',
+        text: error.message,
         icon: 'error',
         confirmButtonText: 'Reintentar',
+        confirmButtonColor: '#ff4d4d',
         background: '#1e1e1e',
         color: '#ffffff',
-        confirmButtonColor: '#ff4d4d',
       });
+
+    } finally {
+      setCargando(false);
     }
   };
 
@@ -87,6 +96,7 @@ export default function Login() {
             placeholder="Ingrese su correo"
             value={correo}
             onChange={(e) => setCorreo(e.target.value)}
+            autoComplete="email"
             required
           />
 
@@ -96,16 +106,26 @@ export default function Login() {
             placeholder="Ingrese su contraseña"
             value={clave}
             onChange={(e) => setClave(e.target.value)}
+            autoComplete="current-password"
             required
           />
 
-          <button type="submit" className="boton-entrar">
-            INICIAR SESIÓN
+          <button
+            type="submit"
+            className="boton-entrar"
+            disabled={cargando}
+          >
+            {cargando
+              ? 'INICIANDO SESIÓN...'
+              : 'INICIAR SESIÓN'}
           </button>
 
           <p className="texto-registro">
             ¿No tienes cuenta?{' '}
-            <Link to="/registro" className="btn-crear">
+            <Link
+              to="/registro"
+              className="btn-crear"
+            >
               Crear cuenta
             </Link>
           </p>

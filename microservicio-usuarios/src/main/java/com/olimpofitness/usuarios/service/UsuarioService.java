@@ -7,11 +7,14 @@ import com.olimpofitness.usuarios.model.Usuario;
 import com.olimpofitness.usuarios.repository.UsuarioRepository;
 import com.olimpofitness.usuarios.dto.ActualizarUsuarioRequest;
 import com.olimpofitness.usuarios.dto.LoginRequest;
+
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.BadCredentialsException;
 
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
@@ -114,9 +117,21 @@ public class UsuarioService {
     public void eliminarUsuario(Long id) {
 
         Usuario usuario = usuarioRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "El usuario no existe"
-                ));
+            .orElseThrow(() ->
+                new ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Usuario no encontrado"
+                )
+            );
+
+        if ("ADMIN".equalsIgnoreCase(
+                usuario.getRol().toString()
+        )) {
+            throw new ResponseStatusException(
+                HttpStatus.FORBIDDEN,
+                "No se pueden eliminar usuarios administradores"
+            );
+        }
 
         usuarioRepository.delete(usuario);
     }

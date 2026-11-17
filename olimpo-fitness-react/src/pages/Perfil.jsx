@@ -1,41 +1,132 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { usuariosApi } from '../services/usuariosApi';
 
 export default function Perfil() {
   const navigate = useNavigate();
+
   const [usuario, setUsuario] = useState(null);
   const [misReservas, setMisReservas] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    // 1. Validar si hay una sesión activa
-    const sesionActiva = localStorage.getItem('sesionOlimpo') === 'true';
-    const datosUsuario = JSON.parse(localStorage.getItem('usuarioLogueado'));
+    let activo = true;
 
-    if (!sesionActiva || !datosUsuario) {
-      navigate('/login');
-      return;
-    }
+    const cargarPerfil = async () => {
+      // Obtener el JWT generado por Spring Boot
+      const token = sessionStorage.getItem('tokenOlimpo');
 
-    setUsuario(datosUsuario);
+      if (!token) {
+        navigate('/login', { replace: true });
+        return;
+      }
 
-    // 2. Cargar y filtrar el historial de reservas para este usuario
-    const historialReservas = JSON.parse(localStorage.getItem('reservasOlimpo')) || [];
-    const filtradas = historialReservas.filter(
-      (reserva) => reserva.correo === datosUsuario.correo
-    );
-    setMisReservas(filtradas);
+      try {
+        // Consultar datos reales del microservicio
+        const datosUsuario = await usuariosApi.miPerfil(token);
+
+        if (!activo) return;
+
+        // Validar que el backend devolvió un usuario
+        if (!datosUsuario || !datosUsuario.correo) {
+          throw new Error(
+            'El servidor no devolvió un perfil válido.'
+          );
+        }
+
+        setUsuario(datosUsuario);
+
+        // Reservas locales: integración temporal
+        // No son todavía reservas del backend
+        let historialReservas = [];
+
+        try {
+          const guardadas = JSON.parse(
+            localStorage.getItem('reservasOlimpo') || '[]'
+          );
+
+          if (Array.isArray(guardadas)) {
+            historialReservas = guardadas;
+          }
+        } catch {
+          historialReservas = [];
+        }
+
+        const filtradas = historialReservas.filter(
+          (reserva) =>
+            reserva.correo?.toLowerCase() ===
+            datosUsuario.correo.toLowerCase()
+        );
+
+        setMisReservas(filtradas);
+
+      } catch (err) {
+        if (!activo) return;
+
+        setError(
+          err.message || 'No se pudo cargar el perfil.'
+        );
+      } finally {
+        if (activo) {
+          setCargando(false);
+        }
+      }
+    };
+
+    cargarPerfil();
+
+    return () => {
+      activo = false;
+    };
   }, [navigate]);
 
-  if (!usuario) {
-    return null; // O un indicador de carga mientras redirige
+  // Mostrar carga mientras consulta Spring Boot
+  if (cargando) {
+    return (
+      <main className="contenedor-perfil">
+        <div className="tarjeta-perfil">
+          <p style={{ color: '#e9c009', textAlign: 'center' }}>
+            Cargando perfil...
+          </p>
+        </div>
+      </main>
+    );
   }
 
-  const esInactivo = !usuario.plan || usuario.plan === 'Sin Plan Activo';
+  // Mostrar error sin dejar una pantalla blanca
+  if (error) {
+    return (
+      <main className="contenedor-perfil">
+        <div className="tarjeta-perfil">
+          <p style={{ color: '#ff4d4d', textAlign: 'center' }}>
+            {error}
+          </p>
 
-  // Obtener las iniciales del usuario para el avatar
+          <button
+            className="boton-entrar"
+            onClick={() => navigate('/login')}
+          >
+            Volver al inicio de sesión
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  if (!usuario) return null;
+
+  // El microservicio de usuarios todavía no
+  // proporciona información de membresías
+  const plan = usuario.plan || 'Sin Plan Activo';
+  const esInactivo = plan === 'Sin Plan Activo';
+
+  // Generar iniciales para el avatar
   const iniciales = usuario.nombre
     ? usuario.nombre
-        .split(' ')
+        .trim()
+        .split(/\s+/)
         .map((n) => n[0])
         .join('')
         .substring(0, 2)
@@ -45,16 +136,17 @@ export default function Perfil() {
   return (
     <main className="contenedor-perfil">
       <div className="tarjeta-perfil">
-        {/* Cabecera del Perfil */}
+
+        {/* Cabecera del perfil */}
         <div className="cabecera-perfil">
           <div className="avatar-usuario">
             <span>{iniciales}</span>
           </div>
+
           <h1 className="nombre-usuario" id="texto-nombre">
             {usuario.nombre}
           </h1>
 
-          {/* Badge de Estado Dinámico */}
           {esInactivo ? (
             <span
               className="badge-estado"
@@ -84,7 +176,7 @@ export default function Perfil() {
 
         <hr className="separador" />
 
-        {/* Sección Datos Extra */}
+        {/* Datos reales de Spring Boot */}
         <div className="seccion-datos">
           <h3 className="titulo-seccion">Datos Extra</h3>
 
@@ -98,45 +190,75 @@ export default function Perfil() {
 
         <hr className="separador" />
 
-        {/* Sección Membresía Actual */}
+        {/* Membresía pendiente de integración */}
         <div className="seccion-datos">
-          <h3 className="titulo-seccion">Membresía Actual</h3>
+          <h3 className="titulo-seccion">
+            Membresía Actual
+          </h3>
 
           <div className="fila-dato">
             <span className="etiqueta-dato">Plan:</span>
-            <span className="valor-dato plan-resaltado" id="texto-plan">
-              {esInactivo ? 'SIN PLAN ACTIVO' : usuario.plan.toUpperCase()}
+            <span
+              className="valor-dato plan-resaltado"
+              id="texto-plan"
+            >
+              {esInactivo
+                ? 'SIN PLAN ACTIVO'
+                : plan.toUpperCase()}
             </span>
           </div>
 
-          <div className="fila-dato" id="texto-vencimiento-2">
-            <span className="etiqueta-dato">Estado:</span>
+          <div
+            className="fila-dato"
+            id="texto-vencimiento-2"
+          >
+            <span className="etiqueta-dato">
+              Estado:
+            </span>
+
             <span
-              className={`valor-dato ${esInactivo ? '' : 'estado-al-dia'}`}
+              className={`valor-dato ${
+                esInactivo ? '' : 'estado-al-dia'
+              }`}
               id="texto-estado"
-              style={{ color: esInactivo ? '#E80000' : undefined }}
+              style={{
+                color: esInactivo
+                  ? '#E80000'
+                  : undefined,
+              }}
             >
               {esInactivo ? 'INACTIVO' : 'Al día'}
             </span>
           </div>
 
-          {!esInactivo && (
-            <div className="fila-dato" id="texto-vencimiento">
-              <span className="etiqueta-dato">Vencimiento:</span>
-              <span className="valor-dato">15 de Noviembre, 2026</span>
+          {usuario.fechaVencimiento && (
+            <div
+              className="fila-dato"
+              id="texto-vencimiento"
+            >
+              <span className="etiqueta-dato">
+                Vencimiento:
+              </span>
+              <span className="valor-dato">
+                {usuario.fechaVencimiento}
+              </span>
             </div>
           )}
         </div>
 
         <hr className="separador" />
 
-        {/* Sección Clases Reservadas */}
+        {/* Reservas locales pendientes de integrar */}
         <div className="seccion-datos">
-          <h3 className="titulo-seccion">Mis Clases Reservadas</h3>
+          <h3 className="titulo-seccion">
+            Mis Clases Reservadas
+          </h3>
 
           <div id="lista-reservas">
             {misReservas.length === 0 ? (
-              <span className="etiqueta-dato">No tienes clases reservadas aún.</span>
+              <span className="etiqueta-dato">
+                No tienes clases reservadas aún.
+              </span>
             ) : (
               misReservas.map((reserva, index) => (
                 <div
@@ -150,10 +272,17 @@ export default function Perfil() {
                     flexDirection: 'column',
                   }}
                 >
-                  <span className="valor-dato" style={{ color: '#e9c009' }}>
+                  <span
+                    className="valor-dato"
+                    style={{ color: '#e9c009' }}
+                  >
                     {reserva.clase}
                   </span>
-                  <span className="etiqueta-dato" style={{ fontSize: '12px' }}>
+
+                  <span
+                    className="etiqueta-dato"
+                    style={{ fontSize: '12px' }}
+                  >
                     Generada el: {reserva.fechaReserva}
                   </span>
                 </div>
@@ -161,6 +290,7 @@ export default function Perfil() {
             )}
           </div>
         </div>
+
       </div>
     </main>
   );

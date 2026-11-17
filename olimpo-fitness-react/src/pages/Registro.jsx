@@ -1,70 +1,75 @@
+
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { usuariosApi } from '../services/usuariosApi';
 
 export default function Registro() {
   const navigate = useNavigate();
 
-  // Estados para los campos del formulario
+  // Estados del formulario
   const [correo, setCorreo] = useState('');
   const [nombre, setNombre] = useState('');
   const [clave1, setClave1] = useState('');
   const [clave2, setClave2] = useState('');
 
-  // Estados para el mensaje de respuesta (error o éxito)
+  // Estados de respuesta
   const [mensaje, setMensaje] = useState('');
   const [esExito, setEsExito] = useState(false);
+  const [cargando, setCargando] = useState(false);
 
-  // Función equivalente a registrarCuenta()
-  const handleRegistrarCuenta = (e) => {
+  const handleRegistrarCuenta = async (e) => {
     e.preventDefault();
 
-    // 1. Validar que las contraseñas coincidan
+    if (cargando) return;
+
+    setMensaje('');
+    setEsExito(false);
+
+    // Validar contraseñas
     if (clave1 !== clave2) {
       setMensaje('Las contraseñas no coinciden.');
-      setEsExito(false);
       return;
     }
 
-    // 2. Validar largo mínimo de contraseña
     if (clave1.length < 6) {
-      setMensaje('La contraseña debe tener al menos 6 caracteres.');
-      setEsExito(false);
+      setMensaje(
+        'La contraseña debe tener al menos 6 caracteres.'
+      );
       return;
     }
 
-    // 3. Obtener base de datos de usuarios de localStorage
-    let usuariosGuardados = JSON.parse(localStorage.getItem('baseDatosOlimpo')) || [];
+    setCargando(true);
 
-    // 4. Verificar si el correo ya existe
-    const existeCorreo = usuariosGuardados.find(
-      (user) => user.correo.toLowerCase() === correo.trim().toLowerCase()
-    );
+    try {
+      // Enviar datos a Spring Boot
+      const respuesta = await usuariosApi.registrar(
+        nombre.trim(),
+        correo.trim(),
+        clave1
+      );
 
-    if (existeCorreo) {
-      setMensaje('Este correo ya está registrado. Intenta iniciar sesión.');
+      // Registro exitoso
+      setEsExito(true);
+      setMensaje(
+        respuesta?.mensaje ||
+        '¡Cuenta creada correctamente! Redirigiendo...'
+      );
+
+      // Redirigir a Login
+      setTimeout(() => {
+        navigate('/login');
+      }, 1500);
+
+    } catch (error) {
       setEsExito(false);
-      return;
+      setMensaje(
+        error.message ||
+        'No se pudo registrar el usuario.'
+      );
+
+    } finally {
+      setCargando(false);
     }
-
-    // 5. Crear el nuevo objeto de usuario
-    const nuevoUsuario = {
-      nombre: nombre.trim(),
-      correo: correo.trim(),
-      clave: clave1,
-      plan: 'Sin Plan Activo',
-    };
-
-    // 6. Guardar en localStorage
-    usuariosGuardados.push(nuevoUsuario);
-    localStorage.setItem('baseDatosOlimpo', JSON.stringify(usuariosGuardados));
-
-    // 7. Mostrar mensaje de éxito y redireccionar a Login
-    setEsExito(true);
-    setMensaje('¡Cuenta creada con éxito! Redirigiendo...');
-
-    setTimeout(() => {
-      navigate('/login');
-    }, 1500);
   };
 
   return (
@@ -79,6 +84,7 @@ export default function Registro() {
             placeholder="Ingrese su correo"
             value={correo}
             onChange={(e) => setCorreo(e.target.value)}
+            autoComplete="email"
             required
           />
 
@@ -88,6 +94,7 @@ export default function Registro() {
             placeholder="Ingrese su nombre completo"
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
+            autoComplete="name"
             required
           />
 
@@ -97,6 +104,8 @@ export default function Registro() {
             placeholder="Ingrese su contraseña"
             value={clave1}
             onChange={(e) => setClave1(e.target.value)}
+            autoComplete="new-password"
+            minLength={6}
             required
           />
 
@@ -106,14 +115,21 @@ export default function Registro() {
             placeholder="Confirme su contraseña"
             value={clave2}
             onChange={(e) => setClave2(e.target.value)}
+            autoComplete="new-password"
+            minLength={6}
             required
           />
 
-          <button type="submit" className="boton-entrar">
-            CREAR CUENTA
+          <button
+            type="submit"
+            className="boton-entrar"
+            disabled={cargando}
+          >
+            {cargando
+              ? 'REGISTRANDO...'
+              : 'CREAR CUENTA'}
           </button>
 
-          {/* Mensaje dinámico de error o éxito */}
           {mensaje && (
             <p
               className="texto-registro"
