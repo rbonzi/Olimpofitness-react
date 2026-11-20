@@ -7,6 +7,12 @@ export default defineConfig({
 
   server: {
     proxy: {
+      // Las reglas específicas van primero
+      "/api/reservas": {
+        target: "http://localhost:8083",
+        changeOrigin: true,
+      },
+      // La regla general va después
       "/api": {
         target: "http://localhost:8081",
         changeOrigin: true,
@@ -14,4 +20,3 @@ export default defineConfig({
     },
   },
 })
-
