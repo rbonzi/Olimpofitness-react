@@ -1,3 +1,4 @@
+import { reservasApi } from '../services/reservasApi';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -5,83 +6,33 @@ import Swal from 'sweetalert2';
 export default function Reservas() {
   const navigate = useNavigate();
 
-  // Función equivalente a reservarClase()
-  const handleReservarClase = (nombreClase) => {
-    const sesionActiva = localStorage.getItem('sesionOlimpo');
-    const usuarioLogueado = JSON.parse(localStorage.getItem('usuarioLogueado'));
+  const [clases, setClases] = React.useState([]);
+  const [error, setError] = React.useState('');
 
-    // 1. Validar que la sesión esté activa
-    if (sesionActiva !== 'true' || !usuarioLogueado) {
-      Swal.fire({
-        title: '¡Atención!',
-        text: '¡Debes iniciar sesión para reservar una clase!',
-        icon: 'warning',
-        confirmButtonText: 'Ir a Iniciar Sesión',
-        background: '#1e1e1e',
-        color: '#ffffff',
-        confirmButtonColor: '#ffcc00'
-      }).then(() => {
-        navigate('/login');
-      });
+  async function cargarClases() {
+    try {
+      setClases(await reservasApi('/clases'));
+      setError('');
+    } catch {
+      setError('No se pudieron cargar los cupos.');
+    }
+  }
+
+  React.useEffect(() => { cargarClases(); }, []);
+
+  async function handleReservarClase(id) {
+    if (!sessionStorage.getItem('tokenOlimpo')) {
+      navigate('/login');
       return;
     }
-
-    // 2. Validar si el usuario es administrador
-    if (usuarioLogueado.rol === 'admin') {
-      Swal.fire({
-        title: 'Perfil Administrador',
-        text: 'Eres el administrador, no necesitas reservar cupo.',
-        icon: 'info',
-        confirmButtonText: 'Entendido',
-        background: '#1e1e1e',
-        color: '#ffffff',
-        confirmButtonColor: '#ffcc00'
-      });
-      return;
+    try {
+      await reservasApi('/clases/' + id, 'POST');
+      await Swal.fire('Reserva confirmada', 'Puedes verla en tu perfil.', 'success');
+    } catch (error) {
+      await Swal.fire('Reserva pendiente', error.message, 'warning');
     }
-
-    // 3. Revisar el historial de reservas en localStorage
-    let historialReservas = JSON.parse(localStorage.getItem('reservasOlimpo')) || [];
-
-    const yaReservada = historialReservas.find(
-      (reserva) => reserva.correo === usuarioLogueado.correo && reserva.clase === nombreClase
-    );
-
-    if (yaReservada) {
-      Swal.fire({
-        title: 'Reserva Existente',
-        text: `Ya tienes una reserva activa para: ${nombreClase}`,
-        icon: 'info',
-        confirmButtonText: 'Aceptar',
-        background: '#1e1e1e',
-        color: '#ffffff',
-        confirmButtonColor: '#ffcc00'
-      });
-      return;
-    }
-
-    // 4. Crear nueva reserva y guardar
-    const nuevaReserva = {
-      correo: usuarioLogueado.correo,
-      nombre: usuarioLogueado.nombre,
-      clase: nombreClase,
-      fechaReserva: new Date().toLocaleDateString()
-    };
-
-    historialReservas.push(nuevaReserva);
-    localStorage.setItem('reservasOlimpo', JSON.stringify(historialReservas));
-
-    Swal.fire({
-      title: '¡Reserva Exitosa!',
-      text: `¡Éxito! Tu cupo para ${nombreClase} ha sido reservado.`,
-      icon: 'success',
-      confirmButtonText: 'Genial',
-      background: '#1e1e1e',
-      color: '#ffffff',
-      confirmButtonColor: '#129b3a'
-    });
-  };
-
+    cargarClases();
+  }
   return (
     <main className="contenedor-reservas">
       <div className="encabezado-planes">
@@ -91,6 +42,7 @@ export default function Reservas() {
         </p>
       </div>
 
+      {error && <p role="alert">{error} <button onClick={cargarClases}>Reintentar</button></p>}
       <div className="grilla-horarios">
         {/* LUNES */}
         <div className="dia-horario">
@@ -102,9 +54,10 @@ export default function Reservas() {
             <p className="profe-clase">Prof: Carlos M.</p>
             <button
               className="btn-reservar"
-              onClick={() => handleReservarClase('Crossfit - Lunes 09:00')}
+              disabled={!(clases.find(c => c.id === 1)?.disponibles > 0)}
+              onClick={() => handleReservarClase(1)}
             >
-              RESERVAR
+              Reservar ({clases.find(c => c.id === 1)?.disponibles ?? '…'} cupos)
             </button>
           </div>
 
@@ -114,9 +67,10 @@ export default function Reservas() {
             <p className="profe-clase">Prof: Andrea S.</p>
             <button
               className="btn-reservar"
-              onClick={() => handleReservarClase('Spinning - Lunes 18:00')}
+              disabled={!(clases.find(c => c.id === 2)?.disponibles > 0)}
+              onClick={() => handleReservarClase(2)}
             >
-              RESERVAR
+              Reservar ({clases.find(c => c.id === 2)?.disponibles ?? '…'} cupos)
             </button>
           </div>
         </div>
@@ -131,9 +85,10 @@ export default function Reservas() {
             <p className="profe-clase">Prof: Valeria T.</p>
             <button
               className="btn-reservar"
-              onClick={() => handleReservarClase('Yoga - Miércoles 10:00')}
+              disabled={!(clases.find(c => c.id === 3)?.disponibles > 0)}
+              onClick={() => handleReservarClase(3)}
             >
-              RESERVAR
+              Reservar ({clases.find(c => c.id === 3)?.disponibles ?? '…'} cupos)
             </button>
           </div>
 
@@ -143,9 +98,10 @@ export default function Reservas() {
             <p className="profe-clase">Prof: Carlos M.</p>
             <button
               className="btn-reservar"
-              onClick={() => handleReservarClase('Crossfit - Miércoles 19:00')}
+              disabled={!(clases.find(c => c.id === 4)?.disponibles > 0)}
+              onClick={() => handleReservarClase(4)}
             >
-              RESERVAR
+              Reservar ({clases.find(c => c.id === 4)?.disponibles ?? '…'} cupos)
             </button>
           </div>
         </div>
@@ -160,9 +116,10 @@ export default function Reservas() {
             <p className="profe-clase">Prof: Luis F.</p>
             <button
               className="btn-reservar"
-              onClick={() => handleReservarClase('Boxeo - Viernes 11:00')}
+              disabled={!(clases.find(c => c.id === 5)?.disponibles > 0)}
+              onClick={() => handleReservarClase(5)}
             >
-              RESERVAR
+              Reservar ({clases.find(c => c.id === 5)?.disponibles ?? '…'} cupos)
             </button>
           </div>
         </div>
