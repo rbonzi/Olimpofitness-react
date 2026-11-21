@@ -1,13 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { usuariosApi } from '../services/usuariosApi';
+import { planesApi } from '../services/planesApi';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
 
   const [usuarios, setUsuarios] = useState([]);
+  const [planes, setPlanes] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [procesando, setProcesando] = useState(false);
@@ -15,7 +16,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     let activo = true;
 
-    const cargarUsuarios = async () => {
+    const cargarDatos = async () => {
       const token = sessionStorage.getItem('tokenOlimpo');
 
       if (!token) {
@@ -24,26 +25,23 @@ export default function AdminDashboard() {
       }
 
       try {
-        // Verificar el usuario autenticado
         const perfil = await usuariosApi.miPerfil(token);
 
         if (perfil.rol?.toUpperCase() !== 'ADMIN') {
-          throw new Error(
-            'No tienes permisos para acceder al panel.'
-          );
+          throw new Error('No tienes permisos para acceder al panel.');
         }
 
-        // Consultar usuarios reales desde MySQL
-        const lista = await usuariosApi.listarUsuarios(token);
+        const [listaUsuarios, listaPlanes] = await Promise.all([
+          usuariosApi.listarUsuarios(token),
+          planesApi.listarPlanes(),
+        ]);
 
         if (activo) {
-          if (!Array.isArray(lista)) {
-            throw new Error(
-              'El servidor no devolvió una lista válida.'
-            );
+          if (!Array.isArray(listaUsuarios)) {
+            throw new Error('El servidor no devolvió una lista de usuarios válida.');
           }
-
-          setUsuarios(lista);
+          setUsuarios(listaUsuarios);
+          setPlanes(Array.isArray(listaPlanes) ? listaPlanes : []);
         }
       } catch (err) {
         if (activo) {
@@ -56,35 +54,24 @@ export default function AdminDashboard() {
       }
     };
 
-    cargarUsuarios();
+    cargarDatos();
 
     return () => {
       activo = false;
     };
   }, [navigate]);
 
+  // ================= GESTIÓN DE USUARIOS =================
   const handleEditarUsuario = async (user) => {
     const resultado = await Swal.fire({
       title: 'Editar usuario',
       html: `
-        <input
-          id="editar-nombre"
-          class="swal2-input"
-          placeholder="Nombre"
-        >
-        <input
-          id="editar-correo"
-          type="email"
-          class="swal2-input"
-          placeholder="Correo"
-        >
+        <input id="editar-nombre" class="swal2-input" placeholder="Nombre">
+        <input id="editar-correo" type="email" class="swal2-input" placeholder="Correo">
       `,
       didOpen: () => {
-        document.getElementById('editar-nombre').value =
-          user.nombre;
-
-        document.getElementById('editar-correo').value =
-          user.correo;
+        document.getElementById('editar-nombre').value = user.nombre;
+        document.getElementById('editar-correo').value = user.correo;
       },
       showCancelButton: true,
       confirmButtonText: 'Guardar',
@@ -93,28 +80,17 @@ export default function AdminDashboard() {
       background: '#1e1e1e',
       color: '#ffffff',
       preConfirm: () => {
-        const nombre = document
-          .getElementById('editar-nombre')
-          .value.trim();
-
-        const correo = document
-          .getElementById('editar-correo')
-          .value.trim();
+        const nombre = document.getElementById('editar-nombre').value.trim();
+        const correo = document.getElementById('editar-correo').value.trim();
 
         if (!nombre || !correo) {
-          Swal.showValidationMessage(
-            'Nombre y correo son obligatorios.'
-          );
+          Swal.showValidationMessage('Nombre y correo son obligatorios.');
           return false;
         }
-
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
-          Swal.showValidationMessage(
-            'Ingresa un correo válido.'
-          );
+          Swal.showValidationMessage('Ingresa un correo válido.');
           return false;
         }
-
         return { nombre, correo };
       },
     });
@@ -122,7 +98,6 @@ export default function AdminDashboard() {
     if (!resultado.isConfirmed) return;
 
     const token = sessionStorage.getItem('tokenOlimpo');
-
     setProcesando(true);
 
     try {
@@ -134,9 +109,7 @@ export default function AdminDashboard() {
       );
 
       setUsuarios((actuales) =>
-        actuales.map((u) =>
-          u.id === user.id ? actualizado : u
-        )
+        actuales.map((u) => (u.id === user.id ? actualizado : u))
       );
 
       await Swal.fire({
@@ -180,15 +153,11 @@ export default function AdminDashboard() {
     if (!confirmacion.isConfirmed) return;
 
     const token = sessionStorage.getItem('tokenOlimpo');
-
     setProcesando(true);
 
     try {
       await usuariosApi.eliminarUsuario(user.id, token);
-
-      setUsuarios((actuales) =>
-        actuales.filter((u) => u.id !== user.id)
-      );
+      setUsuarios((actuales) => actuales.filter((u) => u.id !== user.id));
 
       await Swal.fire({
         title: 'Usuario eliminado',
@@ -206,12 +175,165 @@ export default function AdminDashboard() {
     }
   };
 
+  // ================= GESTIÓN DE PLANES =================
+  const handleCrearPlan = async () => {
+    const resultado = await Swal.fire({
+      title: 'Nuevo Plan Olimpo',
+      html: `
+        <input id="plan-nombre" class="swal2-input" placeholder="Nombre (ej: Plan Mensual)">
+        <input id="plan-precio" type="number" class="swal2-input" placeholder="Precio (ej: 29990)">
+        <input id="plan-duracion" type="number" class="swal2-input" placeholder="Duración en meses (0 = día, 1 = mes)">
+        <input id="plan-descripcion" class="swal2-input" placeholder="Beneficios separados por coma">
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Crear Plan',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#e9c009',
+      background: '#1e1e1e',
+      color: '#ffffff',
+      preConfirm: () => {
+        const nombre = document.getElementById('plan-nombre').value.trim();
+        const precio = parseFloat(document.getElementById('plan-precio').value);
+        const duracionMeses = parseInt(document.getElementById('plan-duracion').value, 10);
+        const descripcion = document.getElementById('plan-descripcion').value.trim();
+
+        if (!nombre || isNaN(precio) || isNaN(duracionMeses) || !descripcion) {
+          Swal.showValidationMessage('Todos los campos son obligatorios.');
+          return false;
+        }
+        return { nombre, precio, duracionMeses, descripcion };
+      },
+    });
+
+    if (!resultado.isConfirmed) return;
+
+    const token = sessionStorage.getItem('tokenOlimpo');
+    setProcesando(true);
+
+    try {
+      const creado = await planesApi.crearPlan(resultado.value, token);
+      setPlanes((actuales) => [...actuales, creado]);
+
+      await Swal.fire({
+        title: 'Plan creado',
+        icon: 'success',
+        confirmButtonColor: '#e9c009',
+      });
+    } catch (err) {
+      await Swal.fire({
+        title: 'Error al crear plan',
+        text: err.message,
+        icon: 'error',
+      });
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const handleEditarPlan = async (plan) => {
+    const resultado = await Swal.fire({
+      title: 'Editar Plan',
+      html: `
+        <input id="edit-plan-nombre" class="swal2-input" placeholder="Nombre">
+        <input id="edit-plan-precio" type="number" class="swal2-input" placeholder="Precio">
+        <input id="edit-plan-duracion" type="number" class="swal2-input" placeholder="Duración en meses">
+        <input id="edit-plan-descripcion" class="swal2-input" placeholder="Beneficios separados por coma">
+      `,
+      didOpen: () => {
+        document.getElementById('edit-plan-nombre').value = plan.nombre;
+        document.getElementById('edit-plan-precio').value = plan.precio;
+        document.getElementById('edit-plan-duracion').value = plan.duracionMeses;
+        document.getElementById('edit-plan-descripcion').value = plan.descripcion;
+      },
+      showCancelButton: true,
+      confirmButtonText: 'Guardar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#e9c009',
+      background: '#1e1e1e',
+      color: '#ffffff',
+      preConfirm: () => {
+        const nombre = document.getElementById('edit-plan-nombre').value.trim();
+        const precio = parseFloat(document.getElementById('edit-plan-precio').value);
+        const duracionMeses = parseInt(document.getElementById('edit-plan-duracion').value, 10);
+        const descripcion = document.getElementById('edit-plan-descripcion').value.trim();
+
+        if (!nombre || isNaN(precio) || isNaN(duracionMeses) || !descripcion) {
+          Swal.showValidationMessage('Todos los campos son obligatorios.');
+          return false;
+        }
+        return { nombre, precio, duracionMeses, descripcion };
+      },
+    });
+
+    if (!resultado.isConfirmed) return;
+
+    const token = sessionStorage.getItem('tokenOlimpo');
+    setProcesando(true);
+
+    try {
+      const actualizado = await planesApi.actualizarPlan(plan.id, resultado.value, token);
+      setPlanes((actuales) =>
+        actuales.map((p) => (p.id === plan.id ? actualizado : p))
+      );
+
+      await Swal.fire({
+        title: 'Plan actualizado',
+        icon: 'success',
+        confirmButtonColor: '#e9c009',
+      });
+    } catch (err) {
+      await Swal.fire({
+        title: 'Error al actualizar plan',
+        text: err.message,
+        icon: 'error',
+      });
+    } finally {
+      setProcesando(false);
+    }
+  };
+
+  const handleEliminarPlan = async (plan) => {
+    const confirmacion = await Swal.fire({
+      title: '¿Eliminar plan?',
+      text: `Se eliminará "${plan.nombre}".`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#E80000',
+      background: '#1e1e1e',
+      color: '#ffffff',
+    });
+
+    if (!confirmacion.isConfirmed) return;
+
+    const token = sessionStorage.getItem('tokenOlimpo');
+    setProcesando(true);
+
+    try {
+      await planesApi.eliminarPlan(plan.id, token);
+      setPlanes((actuales) => actuales.filter((p) => p.id !== plan.id));
+
+      await Swal.fire({
+        title: 'Plan eliminado',
+        icon: 'success',
+        confirmButtonColor: '#e9c009',
+      });
+    } catch (err) {
+      await Swal.fire({
+        title: 'Error al eliminar plan',
+        text: err.message,
+        icon: 'error',
+      });
+    } finally {
+      setProcesando(false);
+    }
+  };
+
   if (cargando) {
     return (
       <main className="contenedor-admin">
-        <h1 className="titulo-admin">
-          Cargando panel administrativo...
-        </h1>
+        <h1 className="titulo-admin">Cargando panel administrativo...</h1>
       </main>
     );
   }
@@ -219,18 +341,9 @@ export default function AdminDashboard() {
   if (error) {
     return (
       <main className="contenedor-admin">
-        <h1 className="titulo-admin">
-          Acceso administrativo
-        </h1>
-
-        <p style={{ color: '#ff4d4d' }}>
-          {error}
-        </p>
-
-        <button
-          className="btn-editar"
-          onClick={() => navigate('/perfil')}
-        >
+        <h1 className="titulo-admin">Acceso administrativo</h1>
+        <p style={{ color: '#ff4d4d' }}>{error}</p>
+        <button className="btn-editar" onClick={() => navigate('/perfil')}>
           Volver a mi perfil
         </button>
       </main>
@@ -239,16 +352,14 @@ export default function AdminDashboard() {
 
   return (
     <main className="contenedor-admin">
-      <h1 className="titulo-admin">
-        Panel de Control General
-      </h1>
+      <h1 className="titulo-admin">Panel de Control General</h1>
 
       {/* Tarjetas de resumen */}
       <div className="tarjetas-resumen">
         <div className="tarjeta-dato">
-          <h3>Ventas del Día</h3>
-          <p className="numero-grande">—</p>
-          <small>Pendiente de integración</small>
+          <h3>Planes Activos</h3>
+          <p className="numero-grande">{planes.length}</p>
+          <small>Conectado a MySQL</small>
         </div>
 
         <div className="tarjeta-dato">
@@ -259,13 +370,75 @@ export default function AdminDashboard() {
 
         <div className="tarjeta-dato">
           <h3>Usuarios Registrados</h3>
-          <p
-            className="numero-grande"
-            id="contador-usuarios"
-          >
+          <p className="numero-grande" id="contador-usuarios">
             {usuarios.length}
           </p>
         </div>
+      </div>
+
+      {/* Tabla de Planes */}
+      <div className="seccion-tabla" style={{ marginBottom: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h2>Gestión de Planes</h2>
+          <button
+            className="btn-editar"
+            style={{ background: '#28a745', color: '#ffffff' }}
+            disabled={procesando}
+            onClick={handleCrearPlan}
+          >
+            + Nuevo Plan
+          </button>
+        </div>
+
+        <table className="tabla-admin">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Precio</th>
+              <th>Duración (Meses)</th>
+              <th>Beneficios</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {planes.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={{ textAlign: 'center' }}>
+                  No hay planes registrados. Crea uno con "+ Nuevo Plan".
+                </td>
+              </tr>
+            ) : (
+              planes.map((plan) => (
+                <tr key={plan.id}>
+                  <td>{plan.id}</td>
+                  <td>{plan.nombre}</td>
+                  <td>${Number(plan.precio).toLocaleString('es-CL')}</td>
+                  <td>{plan.duracionMeses === 0 ? '1 Día' : `${plan.duracionMeses} mes(es)`}</td>
+                  <td>{plan.descripcion}</td>
+                  <td>
+                    <button
+                      className="btn-editar"
+                      disabled={procesando}
+                      onClick={() => handleEditarPlan(plan)}
+                    >
+                      Editar
+                    </button>{' '}
+                    <button
+                      className="btn-editar"
+                      style={{ background: '#E80000', color: '#ffffff' }}
+                      disabled={procesando}
+                      onClick={() => handleEliminarPlan(plan)}
+                    >
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Tabla de usuarios */}
@@ -286,10 +459,7 @@ export default function AdminDashboard() {
           <tbody id="tabla-usuarios">
             {usuarios.length === 0 ? (
               <tr>
-                <td
-                  colSpan="5"
-                  style={{ textAlign: 'center' }}
-                >
+                <td colSpan="5" style={{ textAlign: 'center' }}>
                   No hay usuarios registrados.
                 </td>
               </tr>
@@ -305,16 +475,10 @@ export default function AdminDashboard() {
                     <button
                       className="btn-editar"
                       disabled={procesando}
-                      onClick={() =>
-                        handleEditarUsuario(user)
-                      }
+                      onClick={() => handleEditarUsuario(user)}
                     >
                       Editar
-                    </button>
-
-                    {' '}
-
-                    
+                    </button>{' '}
                     {user.rol?.toUpperCase() !== 'ADMIN' ? (
                       <button
                         className="btn-editar"
@@ -334,9 +498,7 @@ export default function AdminDashboard() {
                           fontWeight: 'bold',
                           fontSize: '12px',
                         }}
-                      >
-                        
-                      </span>
+                      ></span>
                     )}
                   </td>
                 </tr>
